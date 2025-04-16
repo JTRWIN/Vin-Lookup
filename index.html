@@ -4,9 +4,82 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VIN Lookup Tool</title>
-  <!-- styles and script code would continue here... -->
+  <style>
+    body { font-family: Arial, sans-serif; background: #f0f0f0; margin: 0; padding: 20px; }
+    .container { max-width: 400px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; }
+    input, button { width: 100%; padding: 10px; margin-top: 10px; font-size: 1rem; }
+    button { background: #007BFF; color: #fff; border: none; cursor: pointer; }
+    .result { margin-top: 20px; padding: 10px; background: #e9e9e9; border-radius: 4px; }
+    video, canvas { display: none; width: 100%; margin-top: 10px; border-radius: 4px; }
+  </style>
 </head>
 <body>
-  <!-- HTML structure... -->
+  <div class="container">
+    <h2>VIN Lookup Tool</h2>
+    <input type="text" id="vinInput" placeholder="Enter VIN">
+    <button id="scanBtn">Scan VIN with Camera</button>
+    <video id="video" playsinline autoplay></video>
+    <canvas id="canvas"></canvas>
+    <button id="lookupBtn">Lookup VIN</button>
+    <div id="result" class="result"></div>
+  </div>
+  <script>
+    const ocrApiKey = 'K88310927488957';
+
+    document.getElementById('scanBtn').addEventListener('click', async () => {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        video.style.display = 'block';
+        setTimeout(async () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0);
+          stream.getTracks().forEach(track => track.stop());
+          video.style.display = 'none';
+
+          const dataUrl = canvas.toDataURL('image/jpeg');
+          const form = new FormData();
+          form.append('base64Image', dataUrl);
+          form.append('apikey', ocrApiKey);
+          form.append('language', 'eng');
+
+          const response = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: form });
+          const result = await response.json();
+          const text = result.ParsedResults?.[0]?.ParsedText || '';
+          const match = text.match(/[A-HJ-NPR-Z0-9]{11,17}/);
+          if (match) {
+            document.getElementById('vinInput').value = match[0].trim();
+          } else {
+            alert('VIN not detected. Please try again.');
+          }
+        }, 3000);
+      } catch (e) {
+        alert('Camera access denied or not supported.');
+      }
+    });
+
+    document.getElementById('lookupBtn').addEventListener('click', async () => {
+      const vin = document.getElementById('vinInput').value.trim();
+      if (vin.length < 11) {
+        document.getElementById('result').textContent = 'Please enter a valid VIN (11+ characters).';
+        return;
+      }
+      try {
+        const res = await fetch(`https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvaluesextended/${vin}?format=json`);
+        const data = await res.json();
+        const info = data.Results[0];
+        document.getElementById('result').innerHTML = `
+          <strong>Make:</strong> ${info.Make || 'N/A'}<br>
+          <strong>Model:</strong> ${info.Model || 'N/A'}<br>
+          <strong>Year:</strong> ${info.ModelYear || 'N/A'}<br>
+          <strong>Body Style:</strong> ${info.BodyClass || 'N/A'}`;
+      } catch (e) {
+        document.getElementById('result').textContent = 'Error fetching data. Please try again.';
+      }
+    });
+  </script>
 </body>
 </html>
